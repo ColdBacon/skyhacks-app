@@ -1,36 +1,57 @@
 {% load static %}
 <html lang="en">
-    <head>
-        <title>Silesia Travel Video & Audio</title>
-        <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/bootstrap/3.2.0/css/bootstrap.min.css">
-        <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/bootstrap/3.2.0/css/bootstrap-theme.min.css">
-        <link rel="stylesheet" href="{% static 'css/app.css' %}">
-    </head>
-    <body>
-        <div2>
-            <img src="{% static 'images/slunsk.jpg' %}" width="500" height="600" />
-        </div2>
+<head>
+    <title>Silesia Travel Video & Audio</title>
+    <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/bootstrap/3.2.0/css/bootstrap.min.css">
+    <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/bootstrap/3.2.0/css/bootstrap-theme.min.css">
+    <link rel="stylesheet" href="{% static 'css/app.css' %}">
+</head>
+<body>
 
-        <div>
-            <h1><b>Silesia Travel Video & Audio</b></h1>
-            <h3><b>Discover our region with AI</b></h3>
+<div id="header">
 
-            <form enctype="multipart/form-data" method="POST">
-                {% csrf_token %}
-                <h4>
-                    <input type="file" id="file-upload" name="upload_file" accept=".mp3,.mp4" required>
-                </h4>
-                <h4>
-                    <button class="custom-file-upload" type="submit">Upload file</button>
-                </h4>
-            </form>
-            {%if error %}
-            <h4>Please upload a .mp3 or .mp4 file. </h4>
+    <h1><b>Silesia Travel Video & Audio</b></h1>
+    <h3><b>Discover our region with AI</b></h3>
+
+
+    <form enctype="multipart/form-data" method="POST">
+        {% csrf_token %}
+        <div id="buttons">
+            <input type="file" id="file-upload" name="upload_file" accept=".mp3,.mp4" required>
+            <button class="custom-file-upload" type="submit">Upload file</button>
+            {% if error %}
+                <h4>Please upload a .mp3 or .mp4 file. </h4>
             {% endif %}
-{#            {{video_wykres|safe}}#}
-            {{audio_wykres|safe}}
-{#            {{audio_statystyki|safe}}#}
         </div>
-    </body>
+
+    </form>
+
+    <h3><b>{{ filename }}</b></h3>
+
+    {% if video_wykres %}
+
+        <div class="row">
+            <h1><b>Time</b></h1>
+            {{ video_wykres|safe }}
+        </div>
+        <div class="row">
+            <h1><b>Statistics</b></h1>
+            {{ video_statystyki|safe }}
+        </div>
+    {% endif %}
+
+    {% if audio_wykres %}
+        <div class="row">
+            <h1><b>Time</b></h1>
+            {{ audio_wykres|safe }}
+        </div>
+        <div class="row">
+            <h1><b>Statistics</b></h1>
+            {{ audio_statystyki|safe }}
+        </div>
+    {% endif %}
+
+</div>
+</body>
 
 </html>

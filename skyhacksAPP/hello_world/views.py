@@ -52,6 +52,7 @@ def hello_world(request):
     if request.method == 'POST':
         fs = FileSystemStorage()
         uploaded_file = request.FILES['upload_file']
+        context['filename']=uploaded_file.name
         if uploaded_file.name.endswith('.mp3') or uploaded_file.name.endswith('.wav'):
             name = uploaded_file.name
             fs.delete(uploaded_file.name)
@@ -70,6 +71,8 @@ def hello_world(request):
             html, statystyki = video_to_html('media/' + uploaded_file.name)
             context['video_wykres'] = html
             context['video_statystyki'] = statystyki
+        else:
+            context['error'] = True
 
     return render(request, "upload.html", context)
 
@@ -315,13 +318,13 @@ def audio_to_html(file_path):
     df[3] = df.iloc[:, 0].cat.codes
 
     fig = px.scatter(x=df.iloc[:, 1], y=df.iloc[:, 2], hover_name=df.iloc[:, 0], color=df.iloc[:, 0])
-    fig.update_layout(title_text="", showlegend=False)
+    fig.update_layout(title_text="", showlegend=False, width=960, height=500)
     fig.update_yaxes(title_text='Labels', ticktext=df.iloc[:, 0], tickvals=df.iloc[:, 2], showgrid=True, zeroline=False,
                      fixedrange=True)
     fig.update_xaxes(title_text='Time [s]', nticks=80)
     wykresik = plotly.io.to_html(fig)
 
-    fig2 = px.histogram(x=df.iloc[:, 0])
+    fig2 = px.histogram(x=df.iloc[:, 0], width=960, height=500)
     fig2.update_layout(title_text="")
     fig2.update_xaxes(title_text='Labels')
     statystyki = plotly.io.to_html(fig2)
