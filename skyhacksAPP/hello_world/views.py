@@ -18,44 +18,39 @@ from torchvision import models
 from torchvision import transforms
 from tqdm import tqdm
 
+import speech_recognition as sr
+import fasttext.util
+from pydub import AudioSegment
+from scipy import spatial
+import morfeusz2
+import plotly.express as px
+import numpy as np
+import pandas as pd
+
 
 def hello_world(request):
     context = {}
     if request.method == 'POST':
-        uploaded_file = request.FILES['upload_file']
         fs = FileSystemStorage()
-        fs.delete(uploaded_file.name)
-        fs.save(uploaded_file.name, uploaded_file)
-        print('start')
-        print(os.getcwd())
-        html = video_to_html('media/' + uploaded_file.name)
-        context['wykres'] = html
-    # if request.method == 'POST':
-    #     uploaded_file = request.FILES['upload_file']
-    #     print("nazwa pliku: ", uploaded_file.name)
-    #     if not uploaded_file.name.endswith('.mp3') or not uploaded_file.name.endswith('.mp4'):
-    #         error = True
-    #         context['error'] = error
-    #         messages.error(request, 'Please upload a .mp3 file.')
-    #         print('Please upload a .mp3 or .mp4 file.')
-    #     elif uploaded_file.name.endswith('.mp3'):
-    #         fs = FileSystemStorage()
-    #         fs.delete('file.mp3')
-    #         name = fs.save('file.mp3', uploaded_file)
-    #         #url = fs.url(name)
-    #         os.system('python -m nbconvert --to html --TemplateExporter.exclude_input=True --execute ./audio.ipynb')
-    #         #data = "python ./world.py " + url
-    #         #os.system(data)
-    #     elif uploaded_file.name.endswith('.mp4'):
-    #         f
-    #     else:
-    #         print("hehe... xD")
+        uploaded_file = request.FILES['upload_file']
+        if uploaded_file.name.endswith('.mp3') or uploaded_file.name.endswith('.wav') :
+            name = uploaded_file.name
+            fs.delete(uploaded_file.name)
+            fs.save(uploaded_file.name, uploaded_file)
+            if uploaded_file.name.endswith('.mp3'):
+                new_name = uploaded_file.name[:-4] + '.wav'
+                sound = AudioSegment.from_mp3('media/' + name)
+                sound.export('media/' + new_name, format="wav")
+                name = new_name
+            # wykres, statystyki = audio_to_html('media/' + name)
+            # context['audio_wykres'] = wykres
+            # context['audio_statystyki'] = statystyki
+        elif uploaded_file.name.endswith('.mp4'):
+            fs.delete(uploaded_file.name)
+            fs.save(uploaded_file.name, uploaded_file)
+            html = video_to_html('media/' + uploaded_file.name)
+            context['video_wykres'] = html
 
-    # exec(open("./world.py").read())
-
-    # form = Files(request.POST or None)
-    # context['form'] = form
-    # return render(request, "upload.html", context)
     return render(request, "upload.html", context)
 
 
@@ -174,3 +169,128 @@ def video_to_html(video):
     fig.update_xaxes(title_text='Time [s]', nticks=100)
     result = plotly.io.to_html(fig)
     return result
+
+
+def audio_to_html(file_path):
+    myaudio = AudioSegment.from_file(file_path, "wav")  # Nazwa pliku
+    n = len(myaudio)
+    chunk_length_ms = 3000
+    overlap = 1500
+    flag = 0
+    chunks = []
+    for i in range(0, 2 * n, chunk_length_ms):
+        if i == 0:
+            start = 0
+            end = chunk_length_ms
+        else:
+            start = end - overlap
+            end = start + chunk_length_ms
+        if end >= n:
+            chunks.append(myaudio[start:n])
+            break
+        chunks.append(myaudio[start:end])
+    classes = {"Amusement park": ["park", "zabawa", "rozrywka"],
+               "Animals": ["zwierzę", "fauna"],
+               "Bench": ["ławka"],
+               "Building": ["budynek"],
+               "Castle": ["zamek"],
+               "Cave": ["jaskinia"],
+               "Church": ["kościół"],
+               "City": ["miasto", "miejscowość"],
+               "Cross": ["krzyż"],
+               "Cultural institution": ["kultura", "centrum"],
+               "Food": ["jedzenie"],
+               "Footpath": ["ścieżka"],
+               "Forest": ["las"],
+               "Furniture": ["meble"],
+               "Grass": ["trawa", "trawnik"],
+               "Graveyard": ["cmentarz"],
+               "Lake": ["jezioro", "bajoro", "staw"],
+               "Landscape": ["krajobraz"],
+               "Mine": ["kopalnia"],
+               "Monument": ["rzeźba", "statua"],
+               "Motor vehicle": ["pojazd", "samochód", "motor"],
+               "Mountains": ["góry"],
+               "Museum": ["muzeum"],
+               "Open-air museum": ["powietrze", "na świeżym powietrzu", "muzeum"],
+               "Park": ["park"],
+               "Person": ["osoba", "człowiek", "ludzie"],
+               "Plants": ["roślinność", "flora", "roślina"],
+               "Reservoir": ["rezerwat"],
+               "River": ["rzeka", "strumień"],
+               "Road": ["droga"],
+               "Rocks": ["kamień", "skała"],
+               "Snow": ["śnieg"],
+               "Sport": ["sport"],
+               "Sports facility": ["ośrodek sportowy"],
+               "Stairs": ["schody"],
+               "Trees": ["drzewo"],
+               "Watercraft": ["łódź", "łódka"],
+               "Windows": ["okno"]}
+
+    ft = fasttext.load_model('media/embeddings.bin')
+
+    classes_vec = {}
+    for label in classes:
+        classes_vec[label] = []
+        for i in range(len(classes[label])):
+            classes_vec[label].append(ft.get_word_vector(classes[label][i]))
+    r = sr.Recognizer()
+    morf = morfeusz2.Morfeusz()
+    data = []
+    for moment, chunk in enumerate(chunks):
+        chunk.export("chunk.wav", format="wav")
+        a = sr.AudioFile("chunk.wav")
+        with a as source:
+            audio = r.record(source)
+        try:
+            text = r.recognize_google(audio, language='pl-PL')
+        except:
+            continue
+
+        analyse = morf.analyse(text)
+        words = []
+        for (i, j, (orth, base, tag, posp, kwal)) in analyse:
+            index = base.find(":")
+            if index > -1:
+                words.append(base[:index])
+            else:
+                words.append(base)
+        words = list(set(words))
+        for word in words:
+            word_vec = ft.get_word_vector(word)
+            for label in classes_vec:
+                similarity = 0
+                for i in range(len(classes_vec[label])):
+                    similarity += 1 - spatial.distance.cosine(word_vec, classes_vec[label][i])
+                similarity = similarity / len(classes_vec[label])
+                if similarity > 0.6:
+                    data.append([label, (moment + 1) * 0.5 * chunk_length_ms / 1000])
+
+    data2 = []
+    for i in range(len(data) - 1):
+        if (data[i][0] == data[i + 1][0]) and (data[i][1] + 1.5 == data[i + 1][1]):
+            x = [data[i][0], (data[i][1] + data[i + 1][1]) / 2]
+            data2.append(x)
+        else:
+            data2.append(data[i])
+            if i == len(data) - 2:
+                data2.append(data[i + 1])
+
+    df = pd.DataFrame(data2)
+    df.iloc[:, 0] = df.iloc[:, 0].astype("category")
+    df[3] = df.iloc[:, 0].cat.codes
+
+    fig = px.scatter(x=df.iloc[:, 1], y=df.iloc[:, 2], hover_name=df.iloc[:, 0], color=df.iloc[:, 0])
+    fig.update_layout(title_text="", showlegend=False)
+    fig.update_yaxes(title_text='Labels', ticktext=df.iloc[:, 0], tickvals=df.iloc[:, 2], showgrid=True, zeroline=False,
+                     fixedrange=True)
+    fig.update_xaxes(title_text='Time [s]', nticks=80)
+    wykresik = plotly.io.to_html(fig)
+
+    fig2 = px.histogram(x=df.iloc[:, 0])
+    fig2.update_layout(title_text="")
+    fig2.update_xaxes(title_text='Labels')
+    statystyki = plotly.io.to_html(fig2)
+
+    return wykresik, statystyki
