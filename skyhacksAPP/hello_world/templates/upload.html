@@ -10,6 +10,9 @@
 
 <div id="header">
 
+    <a href="{% url 'audio' %}">Audio Example</a>
+    <a href="{% url 'video' %}">Video Example</a>
+
     <h1><b>Silesia Travel Video & Audio</b></h1>
     <h3><b>Discover our region with AI</b></h3>
 
@@ -29,7 +32,7 @@
     <h3><b>{{ filename }}</b></h3>
 
     {% if video_wykres %}
-
+        Each plot represents assigned labels at each time step. Our charts are interactive, hover the mouse over a point to see the label.
         <div class="row">
             <h1><b>Time</b></h1>
             {{ video_wykres|safe }}
@@ -41,6 +44,7 @@
     {% endif %}
 
     {% if audio_wykres %}
+        Each plot represents assigned labels at each time step. Our charts are interactive, hover the mouse over a point to see the label.
         <div class="row">
             <h1><b>Time</b></h1>
             {{ audio_wykres|safe }}
@@ -51,7 +55,11 @@
         </div>
     {% endif %}
 
+   {% if message %}
+       {{ message }}
+    {% endif %}
 </div>
+
 </body>
 
 </html>

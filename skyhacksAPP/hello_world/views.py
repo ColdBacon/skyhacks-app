@@ -41,7 +41,7 @@ def read(file, threshold=0, vocabulary=None, dtype='float'):
 
 
 with open('media/cc.pl.300.vec', errors='surrogateescape') as f:
-    words, vectors = read(f, threshold=100000)
+    words, vectors = read(f, threshold=500000)
 words_dict = defaultdict(lambda: None)
 for i in range(len(words)):
     words_dict[words[i]] = vectors[i]
@@ -51,29 +51,35 @@ def hello_world(request):
     context = {}
     if request.method == 'POST':
         fs = FileSystemStorage()
-        uploaded_file = request.FILES['upload_file']
-        context['filename']=uploaded_file.name
-        if uploaded_file.name.endswith('.mp3') or uploaded_file.name.endswith('.wav'):
-            name = uploaded_file.name
-            fs.delete(uploaded_file.name)
-            fs.save(uploaded_file.name, uploaded_file)
-            if uploaded_file.name.endswith('.mp3'):
-                new_name = uploaded_file.name[:-4] + '.wav'
-                sound = AudioSegment.from_mp3('media/' + name)
-                sound.export('media/' + new_name, format="wav")
-                name = new_name
-            wykres, statystyki = audio_to_html('media/' + name)
-            context['audio_wykres'] = wykres
-            context['audio_statystyki'] = statystyki
-        elif uploaded_file.name.endswith('.mp4'):
-            fs.delete(uploaded_file.name)
-            fs.save(uploaded_file.name, uploaded_file)
-            html, statystyki = video_to_html('media/' + uploaded_file.name)
-            context['video_wykres'] = html
-            context['video_statystyki'] = statystyki
-        else:
-            context['error'] = True
-
+        try:
+            uploaded_file = request.FILES['upload_file']
+            context['filename'] = uploaded_file.name
+            if uploaded_file.name.endswith('.mp3') or uploaded_file.name.endswith('.wav'):
+                name = uploaded_file.name
+                fs.delete(uploaded_file.name)
+                fs.save(uploaded_file.name, uploaded_file)
+                if uploaded_file.name.endswith('.mp3'):
+                    new_name = uploaded_file.name[:-4] + '.wav'
+                    sound = AudioSegment.from_mp3('media/' + name)
+                    sound.export('media/' + new_name, format="wav")
+                    name = new_name
+                wykres, statystyki = audio_to_html('media/' + name)
+                if wykres is None:
+                    context['message'] = 'No data available for this file'
+                context['audio_wykres'] = wykres
+                context['audio_statystyki'] = statystyki
+            elif uploaded_file.name.endswith('.mp4'):
+                fs.delete(uploaded_file.name)
+                fs.save(uploaded_file.name, uploaded_file)
+                wykres, statystyki = video_to_html('media/' + uploaded_file.name)
+                if wykres is None:
+                    context['message'] = 'No data available for this file'
+                context['video_wykres'] = wykres
+                context['video_statystyki'] = statystyki
+            else:
+                context['error'] = True
+        except Exception as e:
+            context['message'] = 'No data available for this file'
     return render(request, "upload.html", context)
 
 
@@ -145,6 +151,8 @@ def video_to_dataframe(video_path, model, preprocess, columns):
             td = int(count / fps)
             im_pil = Image.fromarray(image).convert('RGB')
             data.append([td, im_pil])
+        if count > int(fps * 30):
+            break
         count += 1
 
     vidcap.release()
@@ -182,20 +190,25 @@ def video_to_html(video):
                 data.append([col, row[0]])
 
     df = pd.DataFrame(data)
-    df.iloc[:, 0] = df.iloc[:, 0].astype("category")
-    df[3] = df.iloc[:, 0].cat.codes
+    result, statystyki = None, None
+    try:
+        df.iloc[:, 0] = df.iloc[:, 0].astype("category")
+        df[3] = df.iloc[:, 0].cat.codes
 
-    fig = px.scatter(x=df.iloc[:, 1], y=df.iloc[:, 2], hover_name=df.iloc[:, 0], color=df.iloc[:, 0])
-    fig.update_layout(title_text="", width=800, height=40 * (max(df.iloc[:, 2]) + 1), showlegend=False)
-    fig.update_yaxes(title_text='Labels', ticktext=df.iloc[:, 0], tickvals=df.iloc[:, 2], showgrid=True, zeroline=False,
-                     fixedrange=True)
-    fig.update_xaxes(title_text='Time [s]', nticks=100)
-    result = plotly.io.to_html(fig)
+        fig = px.scatter(x=df.iloc[:, 1], y=df.iloc[:, 2], hover_name=df.iloc[:, 0], color=df.iloc[:, 0])
+        fig.update_layout(title_text="", width=960, height=40 * (max(df.iloc[:, 2]) + 1), showlegend=False)
+        fig.update_yaxes(title_text='Labels', ticktext=df.iloc[:, 0], tickvals=df.iloc[:, 2], showgrid=True,
+                         zeroline=False,
+                         fixedrange=True)
+        fig.update_xaxes(title_text='Time [s]', nticks=100)
+        result = plotly.io.to_html(fig)
 
-    fig2 = px.histogram(x=df.iloc[:, 0])
-    fig2.update_layout(title_text="")
-    fig2.update_xaxes(title_text='Labels')
-    statystyki = plotly.io.to_html(fig2)
+        fig2 = px.histogram(x=df.iloc[:, 0])
+        fig2.update_layout(title_text="", width=960, height=500)
+        fig2.update_xaxes(title_text='Labels')
+        statystyki = plotly.io.to_html(fig2)
+    except Exception:
+        pass
 
     return result, statystyki
 
@@ -288,7 +301,7 @@ def audio_to_html(file_path):
             word_vec = words_dict[word]
             for label in classes_vec:
                 similarity = 0
-                if word is None or label is None :
+                if word is None or label is None:
                     continue
                 try:
                     for i in range(len(classes_vec[label])):
@@ -296,7 +309,7 @@ def audio_to_html(file_path):
                             continue
                         similarity += 1 - spatial.distance.cosine(word_vec, classes_vec[label][i])
                     similarity = similarity / len(classes_vec[label])
-                    if similarity > 0.6:
+                    if similarity > 0.5:
                         data.append([label, (moment + 1) * 0.5 * chunk_length_ms / 1000])
                 except:
                     pass
@@ -314,19 +327,24 @@ def audio_to_html(file_path):
                 data2.append(data[i + 1])
 
     df = pd.DataFrame(data2)
-    df.iloc[:, 0] = df.iloc[:, 0].astype("category")
-    df[3] = df.iloc[:, 0].cat.codes
+    wykresik, statystyki = None, None
+    try:
+        df.iloc[:, 0] = df.iloc[:, 0].astype("category")
+        df[3] = df.iloc[:, 0].cat.codes
 
-    fig = px.scatter(x=df.iloc[:, 1], y=df.iloc[:, 2], hover_name=df.iloc[:, 0], color=df.iloc[:, 0])
-    fig.update_layout(title_text="", showlegend=False, width=960, height=500)
-    fig.update_yaxes(title_text='Labels', ticktext=df.iloc[:, 0], tickvals=df.iloc[:, 2], showgrid=True, zeroline=False,
-                     fixedrange=True)
-    fig.update_xaxes(title_text='Time [s]', nticks=80)
-    wykresik = plotly.io.to_html(fig)
+        fig = px.scatter(x=df.iloc[:, 1], y=df.iloc[:, 2], hover_name=df.iloc[:, 0], color=df.iloc[:, 0])
+        fig.update_layout(title_text="", showlegend=False, width=960, height=500)
+        fig.update_yaxes(title_text='Labels', ticktext=df.iloc[:, 0], tickvals=df.iloc[:, 2], showgrid=True,
+                         zeroline=False,
+                         fixedrange=True)
+        fig.update_xaxes(title_text='Time [s]', nticks=80)
+        wykresik = plotly.io.to_html(fig)
 
-    fig2 = px.histogram(x=df.iloc[:, 0], width=960, height=500)
-    fig2.update_layout(title_text="")
-    fig2.update_xaxes(title_text='Labels')
-    statystyki = plotly.io.to_html(fig2)
+        fig2 = px.histogram(x=df.iloc[:, 0], width=960, height=500)
+        fig2.update_layout(title_text="")
+        fig2.update_xaxes(title_text='Labels')
+        statystyki = plotly.io.to_html(fig2)
+    except Exception:
+        pass
 
     return wykresik, statystyki
