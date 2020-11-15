@@ -1,14 +1,18 @@
-import os
+from collections import defaultdict
 
 import cv2
+import morfeusz2
 import numpy as np
 import pandas as pd
 import plotly
 import plotly.express as px
 import pytorch_lightning as pl
+import speech_recognition as sr
 from PIL import Image
 from django.core.files.storage import FileSystemStorage
 from django.shortcuts import render
+from pydub import AudioSegment
+from scipy import spatial
 from sklearn.metrics import f1_score
 from torch import nn
 from torch.nn import Linear, BCEWithLogitsLoss
@@ -18,14 +22,29 @@ from torchvision import models
 from torchvision import transforms
 from tqdm import tqdm
 
-import speech_recognition as sr
-import fasttext.util
-from pydub import AudioSegment
-from scipy import spatial
-import morfeusz2
-import plotly.express as px
-import numpy as np
-import pandas as pd
+
+def read(file, threshold=0, vocabulary=None, dtype='float'):
+    header = file.readline().split(' ')
+    count = int(header[0]) if threshold <= 0 else min(threshold, int(header[0]))
+    dim = int(header[1])
+    words = []
+    matrix = np.empty((count, dim), dtype=dtype) if vocabulary is None else []
+    for i in range(count):
+        word, vec = file.readline().split(' ', 1)
+        if vocabulary is None:
+            words.append(word)
+            matrix[i] = np.fromstring(vec, sep=' ', dtype=dtype)
+        elif word in vocabulary:
+            words.append(word)
+            matrix.append(np.fromstring(vec, sep=' ', dtype=dtype))
+    return (words, matrix) if vocabulary is None else (words, np.array(matrix, dtype=dtype))
+
+
+with open('media/cc.pl.300.vec', errors='surrogateescape') as f:
+    words, vectors = read(f, threshold=100000)
+words_dict = defaultdict(lambda: None)
+for i in range(len(words)):
+    words_dict[words[i]] = vectors[i]
 
 
 def hello_world(request):
@@ -33,7 +52,7 @@ def hello_world(request):
     if request.method == 'POST':
         fs = FileSystemStorage()
         uploaded_file = request.FILES['upload_file']
-        if uploaded_file.name.endswith('.mp3') or uploaded_file.name.endswith('.wav') :
+        if uploaded_file.name.endswith('.mp3') or uploaded_file.name.endswith('.wav'):
             name = uploaded_file.name
             fs.delete(uploaded_file.name)
             fs.save(uploaded_file.name, uploaded_file)
@@ -42,14 +61,15 @@ def hello_world(request):
                 sound = AudioSegment.from_mp3('media/' + name)
                 sound.export('media/' + new_name, format="wav")
                 name = new_name
-            # wykres, statystyki = audio_to_html('media/' + name)
-            # context['audio_wykres'] = wykres
-            # context['audio_statystyki'] = statystyki
+            wykres, statystyki = audio_to_html('media/' + name)
+            context['audio_wykres'] = wykres
+            context['audio_statystyki'] = statystyki
         elif uploaded_file.name.endswith('.mp4'):
             fs.delete(uploaded_file.name)
             fs.save(uploaded_file.name, uploaded_file)
-            html = video_to_html('media/' + uploaded_file.name)
+            html, statystyki = video_to_html('media/' + uploaded_file.name)
             context['video_wykres'] = html
+            context['video_statystyki'] = statystyki
 
     return render(request, "upload.html", context)
 
@@ -168,7 +188,13 @@ def video_to_html(video):
                      fixedrange=True)
     fig.update_xaxes(title_text='Time [s]', nticks=100)
     result = plotly.io.to_html(fig)
-    return result
+
+    fig2 = px.histogram(x=df.iloc[:, 0])
+    fig2.update_layout(title_text="")
+    fig2.update_xaxes(title_text='Labels')
+    statystyki = plotly.io.to_html(fig2)
+
+    return result, statystyki
 
 
 def audio_to_html(file_path):
@@ -228,13 +254,11 @@ def audio_to_html(file_path):
                "Watercraft": ["łódź", "łódka"],
                "Windows": ["okno"]}
 
-    ft = fasttext.load_model('media/embeddings.bin')
-
     classes_vec = {}
     for label in classes:
         classes_vec[label] = []
         for i in range(len(classes[label])):
-            classes_vec[label].append(ft.get_word_vector(classes[label][i]))
+            classes_vec[label].append(words_dict[classes[label][i]])
     r = sr.Recognizer()
     morf = morfeusz2.Morfeusz()
     data = []
@@ -258,14 +282,23 @@ def audio_to_html(file_path):
                 words.append(base)
         words = list(set(words))
         for word in words:
-            word_vec = ft.get_word_vector(word)
+            word_vec = words_dict[word]
             for label in classes_vec:
                 similarity = 0
-                for i in range(len(classes_vec[label])):
-                    similarity += 1 - spatial.distance.cosine(word_vec, classes_vec[label][i])
-                similarity = similarity / len(classes_vec[label])
-                if similarity > 0.6:
-                    data.append([label, (moment + 1) * 0.5 * chunk_length_ms / 1000])
+                if word is None or label is None :
+                    continue
+                try:
+                    for i in range(len(classes_vec[label])):
+                        if classes_vec[label][i] is None:
+                            continue
+                        similarity += 1 - spatial.distance.cosine(word_vec, classes_vec[label][i])
+                    similarity = similarity / len(classes_vec[label])
+                    if similarity > 0.6:
+                        data.append([label, (moment + 1) * 0.5 * chunk_length_ms / 1000])
+                except:
+                    pass
+
+    print(len(data))
 
     data2 = []
     for i in range(len(data) - 1):
